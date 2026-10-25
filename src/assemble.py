@@ -87,7 +87,7 @@ function setView(v) {
 }
 var base = null;
 function ensureBase() {
-  if (!base) { base = buildAirbase({ builders: builders, scene: scene, renderer: renderer, groundSrc: window.P51_GROUND }); scene.add(base.root); }
+  if (!base) { base = buildAirbase({ builders: builders, scene: scene, renderer: renderer, groundSrc: window.P51_GROUND, region: window.WB_REGION, regionSrc: window.WB_REGION_TEX, forestSrc: window.WB_FOREST }); scene.add(base.root); }
   return base;
 }
 function applyBg() {
@@ -97,8 +97,8 @@ function applyBg() {
   scene.fog = on ? base.fog : null;
   grid.visible = !on;
   renderer.toneMappingExposure = on ? 0.8 : 1.0;
-  persp.near = on ? 0.3 : 0.1; persp.far = on ? 8000 : 300; persp.updateProjectionMatrix();
-  controls.maxDistance = on ? 2600 : 60;
+  persp.near = on ? 0.3 : 0.1; persp.far = on ? 12000 : 300; persp.updateProjectionMatrix();
+  controls.maxDistance = on ? 5200 : 60;
   $('sec-cam').hidden = !on;
   $('row-park').hidden = !on;
   $('sec-fly').hidden = !on;
@@ -109,7 +109,8 @@ var CAMS = {
   model: function () { return { p: A.cam.pos, t: A.cam.tgt }; },
   runway: function () { return { p: [-9, 3.4, -26], t: [0, 2.2, 70] }; },
   front: function () { return { p: [-11, 2.6, 48], t: [0, 2.0, 0] }; },
-  aerial: function () { return { p: [-1250, 820, 120], t: [0, 0, 420] }; }
+  aerial: function () { return { p: [-1250, 820, 120], t: [0, 0, 420] }; },
+  region: function () { return { p: [-3300, 2300, 600], t: [-200, 0, 700] }; }
 };
 function setCam(k) {
   var c = CAMS[k](); persp.position.set(c.p[0], c.p[1], c.p[2]); controls.target.set(c.t[0], c.t[1], c.t[2]);

@@ -23,6 +23,7 @@ function buildAirbase(env) {
     t.encoding = THREE.sRGBEncoding; t.anisotropy = aniso; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
     return t;
   }
+  var UP = new THREE.Vector3(0, 1, 0);
   var decalOff = function (m, u) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = u || -4; return m; };
 
   /* ---------------------------------------------------------------- terrain */
@@ -38,6 +39,21 @@ function buildAirbase(env) {
     groundMat.map = t; groundMat.needsUpdate = true;
   };
   img.src = env.groundSrc;
+
+  /* ---------------------------------------------------------------- region (expanded map around the base) */
+  var REG = env.region || null;
+  if (REG && env.regionSrc) {
+    var regMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, color: new THREE.Color(0.72, 0.72, 0.72) });
+    regMat.depthWrite = false;
+    var regMesh = new THREE.Mesh(flatPlane((REG.X1 - REG.X0) * SC, (REG.Y1 - REG.Y0) * SC, wx((REG.Y0 + REG.Y1) / 2), wz((REG.X0 + REG.X1) / 2), -0.02), regMat);
+    regMesh.renderOrder = -4; root.add(regMesh);
+    var rimg = new Image();
+    rimg.onload = function () {
+      var t = new THREE.Texture(rimg); t.encoding = THREE.sRGBEncoding; t.anisotropy = aniso; t.needsUpdate = true;
+      regMat.map = t; regMat.needsUpdate = true;
+    };
+    rimg.src = env.regionSrc;
+  }
 
   /* ---------------------------------------------------------------- runway */
   var RZ0 = -512, RZ1 = 508, PADW = 580, HW = 23.2;     // paved runway z-range, pad end, half width
@@ -386,9 +402,72 @@ function buildAirbase(env) {
       }
     }
   })();
+  /* region: village houses + river bridges */
+  if (REG) {
+    (REG.houses || []).forEach(function (h) { shed(h[0], h[1], h[2] / SC, h[3] / SC, -h[4], R() < 0.35 ? 'h' : 'g'); });
+    (REG.bridges || []).forEach(function (b) {
+      var a = b[2] * Math.PI / 180, dz = Math.cos(a), dx = -Math.sin(a), L = 34, cx = wx(b[1]), cz = wz(b[0]);
+      var x0 = cx - dx * L, z0 = cz - dz * L, x1 = cx + dx * L, z1 = cz + dz * L, nx = -dz, nz = dx;
+      var deck = lin(0x8e8a80), rail = lin(0xb4b0a6), pier = lin(0x77746c);
+      B.at(0, 0, 0);
+      B.seg(x0, z0, x1, z1, 9, 0.6, 0.05, deck);
+      [-1, 1].forEach(function (sg) { B.seg(x0 + nx * sg * 4.3, z0 + nz * sg * 4.3, x1 + nx * sg * 4.3, z1 + nz * sg * 4.3, 0.4, 1.0, 0.65, rail); });
+      [-0.45, 0, 0.45].forEach(function (t) { var px = cx + dx * L * t, pz = cz + dz * L * t; B.seg(px - nx * 4, pz - nz * 4, px + nx * 4, pz + nz * 4, 1.2, 0.3, 0, pier); });
+    });
+  }
   var bGeo = B.geometry();
   var bMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
   var bMesh = new THREE.Mesh(bGeo, bMat); bMesh.frustumCulled = false; root.add(bMesh);
+
+  /* ---------------------------------------------------------------- region forests (instanced trees from the forest mask) */
+  var treeGroup = new THREE.Group(); root.add(treeGroup);
+  if (REG && env.forestSrc) {
+    var fimg = new Image();
+    fimg.onload = function () {
+      var FW = fimg.width, FH = fimg.height, cv = document.createElement('canvas'); cv.width = FW; cv.height = FH;
+      var cx2 = cv.getContext('2d'); cx2.drawImage(fimg, 0, 0);
+      var px = cx2.getImageData(0, 0, FW, FH).data;
+      var fsx = (REG.X1 - REG.X0) / FW, fsy = (REG.Y1 - REG.Y0) / FH, tr = rnd(77), pts = [];
+      function blocked(mx, my) {           // keep the runway approach corridors clear
+        return Math.abs(my - 480) < 90 && mx > -760 && mx < 2300;
+      }
+      for (var j = 0; j < FH; j++) for (var i = 0; i < FW; i++) {
+        if (px[(j * FW + i) * 4] < 128) continue;
+        for (var k = 0; k < 1; k++) {
+          if (tr() > 0.2) continue;
+          var mx = REG.X0 + (i + tr()) * fsx, my = REG.Y0 + (j + tr()) * fsy;
+          if (blocked(mx, my)) continue;
+          pts.push([mx, my, 0]);
+        }
+      }
+      (REG.icons || []).forEach(function (p) {
+        pts.push([p[0], p[1], 1]);
+        for (var k = 0; k < 3; k++) if (tr() < 0.6) pts.push([p[0] + (tr() - 0.5) * 14, p[1] + (tr() - 0.5) * 14, 1]);
+      });
+      var nCon = 0, nDec = 0, kinds = pts.map(function () { var c = tr() < 0.4; if (c) nCon++; else nDec++; return c; });
+      var conG = new THREE.ConeGeometry(1, 1, 6, 1); conG.translate(0, 0.5, 0);
+      var decG = new THREE.IcosahedronGeometry(1, 0); decG.scale(1, 0.85, 1);
+      var tMat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, flatShading: true });
+      var con = new THREE.InstancedMesh(conG, tMat, Math.max(1, nCon)), dec = new THREE.InstancedMesh(decG, tMat, Math.max(1, nDec));
+      var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), col = new THREE.Color();
+      var ic = 0, id = 0;
+      var CONC = [0x2f4a2a, 0x36522e, 0x2a4227, 0x3b5631], DECC = [0x4d6b34, 0x587a3a, 0x445f30, 0x62803f, 0x6b7e3a];
+      pts.forEach(function (p, n) {
+        var x = wx(p[1]), z = wz(p[0]), h = (p[2] ? 9 : 11) + tr() * 9, rad = h * (0.3 + tr() * 0.12);
+        q.setFromAxisAngle(UP, tr() * 6.28);
+        if (kinds[n]) {
+          pv.set(x, 0, z); sv.set(rad * 0.9, h, rad * 0.9); m4.compose(pv, q, sv); con.setMatrixAt(ic, m4);
+          col.set(CONC[Math.floor(tr() * CONC.length)]).convertSRGBToLinear().multiplyScalar(0.85 + tr() * 0.3); con.setColorAt(ic++, col);
+        } else {
+          rad *= 1.2; pv.set(x, Math.max(rad * 0.7, h - rad * 0.85), z); sv.set(rad, rad, rad); m4.compose(pv, q, sv); dec.setMatrixAt(id, m4);
+          col.set(DECC[Math.floor(tr() * DECC.length)]).convertSRGBToLinear().multiplyScalar(0.85 + tr() * 0.3); dec.setColorAt(id++, col);
+        }
+      });
+      con.count = ic; dec.count = id;
+      [con, dec].forEach(function (m) { m.frustumCulled = false; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; treeGroup.add(m); });
+    };
+    fimg.src = env.forestSrc;
+  }
 
   /* ---------------------------------------------------------------- parked aircraft (instanced proxies) */
   var parkGroup = new THREE.Group(); root.add(parkGroup);
@@ -456,7 +535,7 @@ function buildAirbase(env) {
     A.allMeshes.forEach(function (m) { if (m.geometry) m.geometry.dispose(); });
     proxyInfo[id] = { parts: parts, shadow: A.shadow, size: [bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z], y0: bb.min.y };
   }
-  var tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(1, 1, 1), tmpP = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+  var tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(1, 1, 1), tmpP = new THREE.Vector3();
   var placed = {};
   ROWS.forEach(function (r) {
     r[2].forEach(function (px) { (placed[r[0]] = placed[r[0]] || []).push([wx(r[1]), wz(px), Math.PI / 2 + r[3]]); });
