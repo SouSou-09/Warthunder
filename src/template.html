@@ -1,0 +1,246 @@
+<title>大戦機 3D ビューア</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* layout: full-height stage on the left, drafting-sheet control panel on the right; stacks on phones */
+:root {
+  --bg: #e4e8eb;
+  --panel: #f3f5f6;
+  --ink: #151c23;
+  --muted: #56626d;
+  --line: #c4cbd2;
+  --accent: #2a56a0;
+  --accent-ink: #ffffff;
+  --stage-a: #eef1f3;
+  --stage-b: #cdd4da;
+  --grid: #a9b3bc;
+  --mark: #b36a12;
+  --f-display: "Big Shoulders Display", "Noto Sans JP", sans-serif;
+  --f-body: "Noto Sans JP", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1016; --panel: #121921; --ink: #e3e8ed; --muted: #8997a4; --line: #25303b;
+    --accent: #7fa8e8; --accent-ink: #0b1016; --stage-a: #1b2530; --stage-b: #0c1218; --grid: #33414f; --mark: #e0a04a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1016; --panel: #121921; --ink: #e3e8ed; --muted: #8997a4; --line: #25303b;
+  --accent: #7fa8e8; --accent-ink: #0b1016; --stage-a: #1b2530; --stage-b: #0c1218; --grid: #33414f; --mark: #e0a04a;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--f-body); font-size: 14px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px;
+  overflow: hidden;
+}
+* { box-sizing: border-box; }
+#app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; }
+#stage {
+  position: relative; min-width: 0; min-height: 0; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 38%, var(--stage-a), var(--stage-b));
+  border: 1px solid var(--line); border-radius: 4px;
+}
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.hud { position: absolute; font-family: var(--f-mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); pointer-events: none; }
+#hud-tl { left: 12px; top: 10px; display: flex; gap: 8px; align-items: baseline; }
+#hud-view { color: var(--ink); font-weight: 500; text-transform: uppercase; }
+#hud-br { right: 12px; bottom: 10px; text-align: right; }
+#nogl[hidden] { display: none; }
+#nogl { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+#panel {
+  min-width: 0; min-height: 0; overflow-y: auto; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 4px; padding: 18px 18px 22px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+h1 { margin: 0; font-family: var(--f-display); font-weight: 800; font-size: 44px; line-height: .95; letter-spacing: .01em; text-wrap: balance; }
+h1 small { display: block; font-family: var(--f-body); font-weight: 500; font-size: 13px; letter-spacing: .02em; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+section { display: flex; flex-direction: column; gap: 8px; }
+h2 { margin: 0; font-family: var(--f-mono); font-weight: 500; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; background: transparent; color: var(--ink); border: 0; border-right: 1px solid var(--line); padding: 8px 4px; cursor: pointer; min-width: 0; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.seg button:hover:not([aria-pressed="true"]) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.row[hidden], section[hidden] { display: none; }
+.row label, .row > span.t { font-size: 13px; }
+.sw { position: relative; width: 38px; height: 22px; border-radius: 11px; border: 1px solid var(--line); background: transparent; cursor: pointer; flex: none; padding: 0; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.sw[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.sw[aria-checked="true"]::after { transform: translateX(16px); background: var(--accent-ink); }
+input[type=range] { width: 120px; accent-color: var(--accent); }
+.rng { display: flex; align-items: center; gap: 8px; }
+.btn { font: inherit; font-size: 13px; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 7px 10px; cursor: pointer; }
+.btn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.val { font-family: var(--f-mono); font-size: 12px; color: var(--muted); min-width: 52px; text-align: right; }
+dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 0; font-family: var(--f-mono); font-size: 12.5px; }
+dl dt, dl dd { margin: 0; padding: 6px 0; border-bottom: 1px dotted var(--line); }
+dl dt { font-family: var(--f-body); font-size: 13px; color: var(--muted); }
+dl dd { text-align: right; font-variant-numeric: tabular-nums; }
+dl dd b { font-weight: 500; color: var(--ink); }
+dl dd i { font-style: normal; color: var(--mark); margin-left: 3px; }
+.note { font-size: 12px; color: var(--muted); line-height: 1.7; margin: 0; }
+.btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.btn.big { padding: 11px 10px; font-size: 15px; font-weight: 700; letter-spacing: .12em; }
+.flying .no-fly, .flying #hud-br { display: none; }
+#fly-hud, #fly-home, #fly-msg, #touch { position: absolute; font-family: var(--f-mono); color: #eef3f7; }
+#fly-hud[hidden], #fly-home[hidden], #fly-msg[hidden], #touch[hidden] { display: none; }
+#fly-hud { left: 50%; top: 10px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 14px; border-radius: 4px; background: rgba(10,16,22,.55); pointer-events: none; }
+.fh-main { display: flex; gap: 18px; }
+.fh-main div { text-align: center; line-height: 1.1; }
+.fh-main b { display: block; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.fh-main small, .fh-sub { font-size: 10px; letter-spacing: .1em; opacity: .85; }
+.fh-sub { display: flex; gap: 14px; }
+#fly-home { right: 12px; top: 10px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 4px; background: rgba(10,16,22,.55); font-size: 12px; pointer-events: none; }
+#fh-arrow { display: inline-block; font-size: 18px; line-height: 1; }
+#fly-msg { left: 50%; bottom: 22%; transform: translateX(-50%); max-width: 90%; padding: 8px 14px; border-radius: 4px; background: rgba(10,16,22,.7); font-family: var(--f-body); font-size: 14px; text-align: center; pointer-events: none; }
+#touch { inset: auto 0 0 0; height: 0; pointer-events: none; }
+#t-stick, #t-thr, #t-btns { position: absolute; bottom: 16px; pointer-events: auto; touch-action: none; }
+#t-stick { left: 16px; width: 120px; height: 120px; border-radius: 50%; background: rgba(10,16,22,.35); border: 1px solid rgba(255,255,255,.4); }
+#t-knob { position: absolute; left: 40px; top: 40px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.75); pointer-events: none; }
+#t-thr { right: 16px; width: 44px; height: 120px; border-radius: 6px; background: rgba(10,16,22,.35); border: 1px solid rgba(255,255,255,.4); overflow: hidden; }
+#t-thr-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(255,255,255,.6); pointer-events: none; }
+#t-btns { right: 72px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 200px; }
+#t-btns button { font: inherit; font-size: 12px; padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,.5); background: rgba(10,16,22,.5); color: #fff; touch-action: none; }
+@media (max-width: 820px) {
+  body { overflow: auto; }
+  #app { height: auto; min-height: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: 58vh auto; }
+  #panel { overflow: visible; }
+  h1 { font-size: 38px; }
+}
+@media (prefers-reduced-motion: reduce) { .sw::after { transition: none; } }
+</style>
+
+<div id="app">
+  <main id="stage">
+    <canvas id="gl" aria-label="3Dモデル"></canvas>
+    <div class="hud" id="hud-tl"><span id="hud-view">自由視点</span><span id="hud-len">L –</span></div>
+    <div class="hud" id="hud-br">ドラッグで回転 · ホイールでズーム · 右ドラッグで移動</div>
+    <div id="nogl" hidden>このブラウザでは WebGL を使えないため、3D 表示ができません。</div>
+    <div id="fly-hud" hidden>
+      <div class="fh-main">
+        <div><b id="fh-spd">0</b><small>km/h</small></div>
+        <div><b id="fh-alt">0</b><small>m</small></div>
+        <div><b id="fh-hdg">090</b><small>HDG</small></div>
+        <div><b id="fh-thr">0</b><small>% THR</small></div>
+      </div>
+      <div class="fh-sub"><span id="fh-gear"></span><span id="fh-flap"></span></div>
+    </div>
+    <div id="fly-home" hidden><span id="fh-arrow">&#9650;</span><span id="fh-dist"></span></div>
+    <div id="fly-msg" hidden></div>
+    <div id="touch" hidden>
+      <div id="t-stick"><div id="t-knob"></div></div>
+      <div id="t-thr"><div id="t-thr-fill"></div></div>
+      <div id="t-btns"><button data-fk="g" type="button">脚</button><button data-fk="f" type="button">フラップ</button><button data-fk="b" type="button">ブレーキ</button><button data-fk="r" type="button">やり直し</button><button data-fk="x" type="button">降りる</button></div>
+    </div>
+  </main>
+  <aside id="panel">
+    <section>
+      <h2>機体</h2>
+      <div class="seg" role="group" aria-label="機体">
+        <button data-ac="p51" aria-pressed="true">P-51D</button>
+        <button data-ac="me262" aria-pressed="false">Me 262</button>
+        <button data-ac="meteor" aria-pressed="false">ミーティア</button>
+      </div>
+    </section>
+
+    <h1 id="title"></h1>
+
+    <section class="no-fly">
+      <h2>視点</h2>
+      <div class="seg" role="group" aria-label="視点">
+        <button data-view="free" aria-pressed="true">自由</button>
+        <button data-view="top" aria-pressed="false">上面</button>
+        <button data-view="side" aria-pressed="false">側面</button>
+        <button data-view="front" aria-pressed="false">正面</button>
+      </div>
+    </section>
+
+    <section class="no-fly">
+      <h2>背景</h2>
+      <div class="seg" role="group" aria-label="背景">
+        <button data-bg="grid" aria-pressed="true">グリッド</button>
+        <button data-bg="base" aria-pressed="false">空軍基地</button>
+      </div>
+    </section>
+
+    <section id="sec-cam" class="no-fly" hidden>
+      <h2>カメラ(基地)</h2>
+      <div class="seg" role="group" aria-label="基地のカメラ">
+        <button data-cam="model" aria-pressed="false">機体</button>
+        <button data-cam="runway" aria-pressed="true">滑走路</button>
+        <button data-cam="front" aria-pressed="false">正面</button>
+        <button data-cam="aerial" aria-pressed="false">全景</button>
+      </div>
+    </section>
+
+    <section id="sec-fly" hidden>
+      <h2>搭乗</h2>
+      <button class="btn big" id="b-board" type="button" aria-pressed="false">搭乗</button>
+      <div class="row"><span class="t" id="l-invert">操縦かんを反転</span><button class="sw" id="t-invert" role="switch" aria-checked="false" aria-labelledby="l-invert"></button></div>
+      <p class="note">W / S スロットル ・ ↑↓ 操縦かん(↓で機首上げ) ・ ←→ 傾け ・ A / D 方向舵 ・ F フラップ ・ G 脚 ・ B / Space ブレーキ ・ C 視点距離 ・ R やり直し ・ Esc 降りる。速度が付いたら ↓ で離陸。ドラッグでカメラを回せます。</p>
+    </section>
+
+    <section class="no-fly">
+      <h2>姿勢</h2>
+      <div class="seg" role="group" aria-label="姿勢">
+        <button data-pose="ground" aria-pressed="true">地上(3 点)</button>
+        <button data-pose="flight" aria-pressed="false">水平飛行</button>
+      </div>
+    </section>
+
+    <section class="no-fly">
+      <h2>操縦翼面</h2>
+      <div>
+        <div class="row"><label for="c-ail">エルロン</label><span class="rng"><input id="c-ail" type="range" min="-100" max="100" value="0"><span class="val" id="v-ail">0°</span></span></div>
+        <div class="row"><label for="c-ele">昇降舵</label><span class="rng"><input id="c-ele" type="range" min="-100" max="100" value="0"><span class="val" id="v-ele">0°</span></span></div>
+        <div class="row"><label for="c-rud">方向舵</label><span class="rng"><input id="c-rud" type="range" min="-100" max="100" value="0"><span class="val" id="v-rud">0°</span></span></div>
+        <div class="row"><label for="c-flap">フラップ</label><span class="rng"><input id="c-flap" type="range" min="0" max="100" value="0"><span class="val" id="v-flap">0°</span></span></div>
+        <div class="row" id="row-slat"><label for="c-slat">前縁スラット</label><span class="rng"><input id="c-slat" type="range" min="0" max="100" value="0"><span class="val" id="v-slat">0%</span></span></div>
+        <div class="row"><label for="c-can" id="l-can">キャノピー</label><span class="rng"><input id="c-can" type="range" min="0" max="100" value="0"><span class="val" id="v-can">0%</span></span></div>
+        <div class="row"><span class="t" id="l-demo">自動で動かす</span><button class="sw" id="t-demo" role="switch" aria-checked="false" aria-labelledby="l-demo"></button></div>
+      </div>
+      <button class="btn" id="ctl-reset" type="button">中立に戻す</button>
+    </section>
+
+    <section class="no-fly">
+      <h2>表示</h2>
+      <div>
+        <div class="row"><span class="t" id="l-bp">三面図を重ねる</span><button class="sw" id="t-bp" role="switch" aria-checked="false" aria-labelledby="l-bp"></button></div>
+        <div class="row"><span class="t" id="l-marks">マーキング</span><button class="sw" id="t-marks" role="switch" aria-checked="true" aria-labelledby="l-marks"></button></div>
+        <div class="row"><span class="t" id="l-lines">パネルライン</span><button class="sw" id="t-lines" role="switch" aria-checked="true" aria-labelledby="l-lines"></button></div>
+        <div class="row"><span class="t" id="l-wire">ワイヤーフレーム</span><button class="sw" id="t-wire" role="switch" aria-checked="false" aria-labelledby="l-wire"></button></div>
+        <div class="row"><span class="t" id="l-gear">脚を出す</span><button class="sw" id="t-gear" role="switch" aria-checked="true" aria-labelledby="l-gear"></button></div>
+        <div class="row" id="row-park" hidden><span class="t" id="l-park">駐機中の機体</span><button class="sw" id="t-park" role="switch" aria-checked="true" aria-labelledby="l-park"></button></div>
+        <div class="row" id="row-spin"><span class="t" id="l-spin">プロペラを回す</span><button class="sw" id="t-spin" role="switch" aria-checked="false" aria-labelledby="l-spin"></button></div>
+        <div class="row"><span class="t" id="l-auto">自動で回転</span><button class="sw" id="t-auto" role="switch" aria-checked="false" aria-labelledby="l-auto"></button></div>
+        <div class="row"><label for="op">機体の不透明度</label><span style="display:flex;align-items:center;gap:8px"><input id="op" type="range" min="10" max="100" value="100"><span class="val" id="op-val">100%</span></span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>モデルの寸法</h2>
+      <dl id="dims"></dl>
+      <p class="note" id="note"></p>
+    </section>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script>window.P51_DATA = __DATA__; window.P51_BP = "__BP__"; window.ME_DATA = __MEDATA__; window.ME_BP = "__MEBP__"; window.MET_BP = "__METBP__"; window.P51_GROUND = "__GROUND__";</script>
+<script>
+__APP__
+</script>

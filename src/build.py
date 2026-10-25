@@ -1,0 +1,12 @@
+import base64, json
+d = open('/home/claude/p51/data.json').read()
+bp = base64.b64encode(open('/home/claude/p51/bp.png', 'rb').read()).decode()
+me = open('/home/claude/me262/me_data.json').read()
+mebp = base64.b64encode(open('/home/claude/me262/src.png', 'rb').read()).decode()
+metbp = base64.b64encode(open('/home/claude/meteor/met_bp.png', 'rb').read()).decode()
+gr = base64.b64encode(open('/home/claude/airbase/ground.jpg', 'rb').read()).decode()
+app = open('/home/claude/p51/app.js').read()
+t = open('/home/claude/p51/template.html').read()
+out = t.replace('__DATA__', d).replace('__BP__', 'data:image/png;base64,' + bp).replace('__MEDATA__', me).replace('__MEBP__', 'data:image/png;base64,' + mebp).replace('__METBP__', 'data:image/png;base64,' + metbp).replace('__GROUND__', 'data:image/jpeg;base64,' + gr).replace('__APP__', app)
+open('/home/claude/p51/mustang.html', 'w').write(out)
+print(len(out))
